@@ -1,9 +1,9 @@
 import streamlit as st
 from ultralytics import YOLO
-import cv2
 import tempfile
 from PIL import Image
 import google.generativeai as genai
+import os
 
 # -------------------------------
 # Load Gemini API Key from Streamlit secrets
@@ -11,7 +11,7 @@ import google.generativeai as genai
 try:
     api_key = st.secrets["GEMINI_API"]
     genai.configure(api_key=api_key)
-except Exception as e:
+except Exception:
     st.error("⚠️ Failed to load Gemini API Key. Please check your Streamlit secrets.")
     st.stop()
 
@@ -26,9 +26,10 @@ uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "p
 
 if uploaded_file is not None:
     # Save file temporarily
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(uploaded_file.getvalue())
-        img_path = tmp.name
+    temp_dir = tempfile.mkdtemp()
+    img_path = os.path.join(temp_dir, uploaded_file.name)
+    with open(img_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
     # Display uploaded image
     st.subheader("📸 Uploaded Image")
@@ -38,8 +39,8 @@ if uploaded_file is not None:
     # Run YOLO object detection
     # -------------------------------
     st.subheader("🔍 YOLO Detection Results")
-    model = YOLO("yolov8n.pt")  # small model for speed
-    results = model(img_path)
+    model = YOLO("yolov8n.pt")  # lightweight model
+    results = model.predict(img_path)
 
     detected_objects = []
     for r in results:
