@@ -1,39 +1,55 @@
 import streamlit as st
-import torch
+import cv2
+import numpy as np
+import tempfile
 from ultralytics import YOLO
-from PIL import Image
 import google.generativeai as genai
-import os
+from PIL import Image
 
-# Load Gemini API key from secret
+# Configure Gemini with API key from Streamlit secrets
 genai.configure(api_key=st.secrets["GEMINI_API"])
 
-# Load YOLOv8 model (pretrained on COCO dataset)
-model = YOLO("yolov8n.pt")
+# Load YOLO model
+model = YOLO("yolov8n.pt")  # small, fast model
 
-st.title("🖼️ AI Object Detector + Gemini Describer")
+# Streamlit UI
+st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
 
-# File uploader
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "webp"])
+uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
-    # Open and display the uploaded image
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+if uploaded_file:
+    # Save to a temp file
+    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile.write(uploaded_file.read())
 
-    # Run YOLO detection
-    results = model(image)
-    labels = results[0].names
-    detected_classes = [labels[int(cls)] for cls in results[0].boxes.cls]
+    # Read image
+    image = Image.open(tfile.name)
+    img_array = np.array(image)
 
-    st.subheader("Detected Objects")
-    st.write(detected_classes)
+    # YOLO detection
+    results = model(img_array)
+    detected_classes = []
+    annotated_img = img_array.copy()
 
-    # Generate description using Gemini
+    for r in results:
+        for box in r.boxes:
+            cls = model.names[int(box.cls)]
+            detected_classes.append(cls)
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(annotated_img, cls, (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36, 255, 12), 2)
+
+    # Show YOLO result
+    st.image(annotated_img, caption="YOLO Detection", use_container_width=True)
+
+    # Ask Gemini for description
     if detected_classes:
         prompt = f"Describe an image containing the following objects: {', '.join(detected_classes)}"
-        model_gemini = genai.GenerativeModel("gemini-pro")
+        model_gemini = genai.GenerativeModel("gemini-1.5-flash")
         response = model_gemini.generate_content(prompt)
 
-        st.subheader("Gemini Description")
+        st.subheader("✨ Gemini Description")
         st.write(response.text)
+    else:
+        st.warning("No objects detected.")
