@@ -1,73 +1,71 @@
-import streamlit as st
-import torch
-import cv2
-import numpy as np
 import os
+import streamlit as st
 from ultralytics import YOLO
+from dotenv import load_dotenv
 import google.generativeai as genai
+from PIL import Image
 
-# =============================
-# Load Gemini API Key
-# =============================
-try:
-    with open("GEMINI_API", "r") as f:
-        api_key = f.read().strip()
-    genai.configure(api_key=api_key)
-    model_gemini = genai.GenerativeModel("gemini-1.5-flash")
-except Exception as e:
-    st.error(f"⚠️ Failed to load Gemini API Key: {e}")
-    model_gemini = None
+# ---------------------------
+# Load Environment Variables
+# ---------------------------
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API")
 
-# =============================
+if not GEMINI_API_KEY:
+    st.error("⚠️ Gemini API key not found. Please add it in your .env file as GEMINI_API=your_key_here")
+    st.stop()
+
+# Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+
+# ---------------------------
 # Load YOLO model
-# =============================
-yolo_model = YOLO("yolov8n.pt")  # lightweight YOLOv8 model
+# ---------------------------
+@st.cache_resource
+def load_yolo_model():
+    return YOLO("yolov8n.pt")
 
-# =============================
-# Streamlit App
-# =============================
+yolo_model = load_yolo_model()
+
+# ---------------------------
+# Streamlit App UI
+# ---------------------------
 st.title("🚀 YOLO + Gemini AI Scene Analyzer")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
-    # Read image
-    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, 1)
+if uploaded_file:
+    # Display uploaded image
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
     # Run YOLO detection
-    results = yolo_model(img)
-    detected_objects = []
+    st.subheader("🔎 YOLO Detection")
+    results = yolo_model.predict(image)
 
-    for result in results:
-        boxes = result.boxes
-        for box in boxes:
-            cls_id = int(box.cls[0].item())
-            label = yolo_model.names[cls_id]
-            detected_objects.append(label)
+    if results and len(results[0].boxes) > 0:
+        annotated_image = results[0].plot()
+        st.image(annotated_image, caption="Detected Objects", use_container_width=True)
 
-            # Draw bounding boxes
-            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(img, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+        # Extract detected labels
+        labels = results[0].names
+        detected_objects = [labels[int(box.cls)] for box in results[0].boxes]
+        st.write("✅ Objects Detected:", detected_objects)
 
-    # Show YOLO annotated image
-    st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="YOLO Detection", use_column_width=True)
-
-    # =============================
-    # Gemini Insights (Text Only)
-    # =============================
-    if model_gemini:
-        detected_text = ", ".join(detected_objects) if detected_objects else "nothing detected"
+        # ---------------------------
+        # Gemini AI Scene Analysis
+        # ---------------------------
+        st.subheader("🧠 Gemini Scene Understanding")
         prompt = f"""
-        I used YOLO to detect these objects: {detected_text}.
-        Based on this, please describe the scene in detail and what might be happening.
+        You are an AI assistant. Analyze this image scene.
+        Objects detected: {detected_objects}.
+        Give a short description of the scene and possible context.
         """
 
-        try:
-            response = model_gemini.generate_content(prompt)
-            st.subheader("🧠 Gemini AI Scene Analysis")
-            st.write(response.text)
-        except Exception as e:
-            st.error(f"⚠️ Gemini API call failed: {e}")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+
+        st.write("### 📖 Scene Description:")
+        st.write(response.text if response else "No description generated.")
+    else:
+        st.warning("⚠️ No objects detected in the image.")
