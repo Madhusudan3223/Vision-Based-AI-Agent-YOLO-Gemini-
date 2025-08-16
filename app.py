@@ -1,60 +1,54 @@
+import os
 import streamlit as st
-import cv2
-from ultralytics import YOLO
-import numpy as np
-import google.generativeai as genai
-import json
 from PIL import Image
+import cv2
+import torch
+from ultralytics import YOLO
+import google.generativeai as genai
 
-# Configure Gemini API
-genai.configure(api_key=st.secrets["GEMINI_API"])
+# ----------------- Setup Gemini -----------------
+genai.configure(api_key=os.getenv("GEMINI_API"))  # Make sure GEMINI_API is set in secrets
 
-# Streamlit UI
-st.set_page_config(page_title="🔍 Vision-Based AI Agent (YOLO + Gemini)", layout="wide")
+# Load Gemini model
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+
+# ----------------- Load YOLO model -----------------
+@st.cache_resource
+def load_yolo():
+    return YOLO("yolov8n.pt")  # lightweight model
+
+yolo_model = load_yolo()
+
+# ----------------- Streamlit App -----------------
 st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
 
-# Model selection
-model_choice = st.selectbox("Choose YOLO model:", ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"])
-model = YOLO(model_choice)
-
 # File uploader
-uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Load directly into PIL
-    img = Image.open(uploaded_file).convert("RGB")
-    img_array = np.array(img)
+    # Open image
+    image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="📸 Uploaded Image", use_column_width=True)
 
-    # YOLO Inference (directly from numpy array)
-    results = model(img_array)
-    annotated_img = results[0].plot()
+    # Run YOLO
+    st.subheader("YOLO Detection")
+    results = yolo_model(image)
 
-    # Gemini Vision API for description
-    model_gemini = genai.GenerativeModel("gemini-1.5-flash")
-    response = model_gemini.generate_content(["Describe this image in detail", img])
-    description = response.text.strip()
+    # Annotate image
+    annotated_frame = results[0].plot()
+    st.image(annotated_frame, caption="📦 YOLO Detection Result", use_column_width=True)
 
-    # Layout: Side by Side
-    col1, col2 = st.columns(2)
+    # Extract detected objects
+    detected_objects = []
+    for box in results[0].boxes:
+        cls_id = int(box.cls[0].item())
+        detected_objects.append(yolo_model.names[cls_id])
 
-    with col1:
-        st.subheader("YOLO Detection")
-        st.image(annotated_img, caption="YOLO Object Detection", use_container_width=True)
+    # Show detected classes
+    st.write("Detected Objects:", detected_objects if detected_objects else "None")
 
-    with col2:
-        st.subheader("✨ Gemini Description")
-        st.write(description)
-
-        # Prepare JSON for download
-        description_json = {
-            "file_name": uploaded_file.name,
-            "model": model_choice,
-            "description": description
-        }
-
-        st.download_button(
-            label="📥 Download Description (JSON)",
-            data=json.dumps(description_json, indent=4),
-            file_name="image_description.json",
-            mime="application/json"
-        )
+    # Gemini description
+    st.subheader("✨ Gemini Description")
+    prompt = f"Describe this image. The objects detected are: {detected_objects}."
+    response = gemini_model.generate_content([prompt, image])
+    st.write(response.text)
