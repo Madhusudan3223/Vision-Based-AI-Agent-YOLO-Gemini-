@@ -1,59 +1,75 @@
 import streamlit as st
+import cv2
 from ultralytics import YOLO
-from PIL import Image
 import google.generativeai as genai
 import os
 
-# 🚀 Title
-st.title("YOLO + Gemini AI App")
-st.write("Upload an image, detect objects with YOLO, and get insights from Gemini AI.")
+# ----------------------------
+# Load Gemini API Key
+# ----------------------------
+try:
+    with open("GEMINI_API", "r") as f:
+        api_key = f.read().strip()
+    genai.configure(api_key=api_key)
+    model_gemini = genai.GenerativeModel("gemini-1.5-flash")
+except Exception as e:
+    st.error(f"⚠️ Failed to load Gemini API Key: {e}")
+    model_gemini = None
 
-# 🔑 Load Gemini API Key from Streamlit secrets
-genai.configure(api_key=st.secrets["GEMINI_API"])
+# ----------------------------
+# Load YOLO Model
+# ----------------------------
+try:
+    yolo_model = YOLO("yolov8n.pt")  # using nano version for speed
+except Exception as e:
+    st.error(f"⚠️ Failed to load YOLO model: {e}")
+    yolo_model = None
 
-# 📦 Load YOLO model
-@st.cache_resource
-def load_model():
-    return YOLO("yolov8n.pt")
+# ----------------------------
+# Gemini Insights Function
+# ----------------------------
+def get_gemini_insights(detected_objects):
+    if not model_gemini:
+        return "Gemini model not available."
+    try:
+        prompt = f"The following objects were detected: {detected_objects}. Describe the scene in detail."
+        response = model_gemini.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"⚠️ Gemini error: {e}"
 
-model = load_model()
+# ----------------------------
+# Streamlit UI
+# ----------------------------
+st.title("🚀 YOLO + Gemini AI Scene Analyzer")
 
-# 📂 Upload an image
-uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Open image
-    image = Image.open(uploaded_file)
-    st.image(image, caption="📸 Uploaded Image", use_container_width=True)
+    # Save uploaded image
+    img_path = "uploaded_image.jpg"
+    with open(img_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
-    # 🔍 YOLO detection
-    results = model(image)
-    result_image = results[0].plot()  # annotated image
-    st.image(result_image, caption="🔍 YOLO Detection Results", use_container_width=True)
+    st.image(img_path, caption="Uploaded Image", use_container_width=True)
 
-    # ✅ Extract detected objects
-    detected_objects = results[0].names
-    object_counts = {}
-    for box in results[0].boxes:
-        cls_id = int(box.cls[0])
-        label = results[0].names[cls_id]
-        object_counts[label] = object_counts.get(label, 0) + 1
+    # Run YOLO detection
+    if yolo_model:
+        results = yolo_model(img_path)
+        detected_objects = []
 
-    st.subheader("✅ Detected Objects")
-    st.write(", ".join([f"{obj} ({count})" for obj, count in object_counts.items()]))
+        for r in results:
+            for c in r.boxes.cls:
+                detected_objects.append(yolo_model.names[int(c)])
 
-    # 🤖 Ask Gemini AI for insights
-    st.subheader("🤖 Gemini AI Insights")
+        detected_objects = list(set(detected_objects))  # unique objects
+        st.subheader("🟢 Objects Detected")
+        st.write(detected_objects if detected_objects else "No objects found.")
 
-    prompt = f"""
-    I detected the following objects in an image: {object_counts}.
-    Please describe the scene in natural language and explain what might be happening.
-    """
-
-    model_gemini = genai.GenerativeModel("gemini-pro")
-    response = model_gemini.generate_content(prompt)
-
-    if response and response.text:
-        st.write(response.text)
+        # Gemini analysis
+        if detected_objects:
+            st.subheader("✨ Gemini AI Scene Description")
+            description = get_gemini_insights(detected_objects)
+            st.write(description)
     else:
-        st.write("⚠️ No insights received from Gemini.")
+        st.error("YOLO model not loaded properly.")
