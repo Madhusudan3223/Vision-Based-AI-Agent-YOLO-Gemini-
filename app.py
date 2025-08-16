@@ -1,38 +1,39 @@
 import streamlit as st
 import torch
-import os
+from ultralytics import YOLO
 from PIL import Image
 import google.generativeai as genai
+import os
 
-# Load YOLO model (make sure you exported YOLOv8 from Colab to same folder)
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # small model for speed
+# Load Gemini API key from secret
+genai.configure(api_key=st.secrets["GEMINI_API"])
 
-# Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API"))
+# Load YOLOv8 model (pretrained on COCO dataset)
+model = YOLO("yolov8n.pt")
 
-st.title("🔎 Vision-Based AI Agent")
-st.write("Upload an image → Detect objects with YOLO → Generate description with Gemini")
+st.title("🖼️ AI Object Detector + Gemini Describer")
 
-# Upload button
+# File uploader
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "webp"])
 
 if uploaded_file is not None:
-    # Open image
+    # Open and display the uploaded image
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
     # Run YOLO detection
     results = model(image)
-    detected_objects = results.pandas().xyxy[0]["name"].tolist()
-    st.write("### 🟢 Detected Objects:", detected_objects)
+    labels = results[0].names
+    detected_classes = [labels[int(cls)] for cls in results[0].boxes.cls]
 
-    if detected_objects:
-        # Generate description using Gemini
+    st.subheader("Detected Objects")
+    st.write(detected_classes)
+
+    # Generate description using Gemini
+    if detected_classes:
+        prompt = f"Describe an image containing the following objects: {', '.join(detected_classes)}"
         model_gemini = genai.GenerativeModel("gemini-pro")
-        prompt = f"The image contains the following objects: {', '.join(detected_objects)}. Write a detailed description."
         response = model_gemini.generate_content(prompt)
 
-        st.write("### 📝 Gemini Description:")
+        st.subheader("Gemini Description")
         st.write(response.text)
-    else:
-        st.warning("No objects detected.")
