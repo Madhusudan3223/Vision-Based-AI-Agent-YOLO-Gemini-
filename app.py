@@ -1,71 +1,47 @@
 import os
 import streamlit as st
-from ultralytics import YOLO
-from dotenv import load_dotenv
-import google.generativeai as genai
 from PIL import Image
+from ultralytics import YOLO
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-# ---------------------------
-# Load Environment Variables
-# ---------------------------
+# Load environment variables
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API")
 
-if not GEMINI_API_KEY:
-    st.error("⚠️ Gemini API key not found. Please add it in your .env file as GEMINI_API=your_key_here")
-    st.stop()
+# Try getting Gemini API key
+api_key = os.getenv("GEMINI_API_KEY")
 
-# Configure Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+if not api_key:
+    st.warning("⚠️ Gemini API key not found! Please set `GEMINI_API_KEY` in .env or Streamlit secrets.")
+else:
+    genai.configure(api_key=api_key)
 
-# ---------------------------
 # Load YOLO model
-# ---------------------------
-@st.cache_resource
-def load_yolo_model():
-    return YOLO("yolov8n.pt")
+model = YOLO("yolov8n.pt")
 
-yolo_model = load_yolo_model()
-
-# ---------------------------
-# Streamlit App UI
-# ---------------------------
+# Streamlit UI
 st.title("🚀 YOLO + Gemini AI Scene Analyzer")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Display uploaded image
+    # Show uploaded image
     image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    # Run YOLO detection
-    st.subheader("🔎 YOLO Detection")
-    results = yolo_model.predict(image)
+    # YOLO detection
+    results = model(image)
+    res_plotted = results[0].plot()
+    st.image(res_plotted, caption="YOLO Detection", use_container_width=True)
 
-    if results and len(results[0].boxes) > 0:
-        annotated_image = results[0].plot()
-        st.image(annotated_image, caption="Detected Objects", use_container_width=True)
+    # Object list
+    objects = results[0].boxes.cls.cpu().numpy()
+    labels = [model.names[int(cls)] for cls in objects]
+    st.write("🔍 Objects Detected:", ", ".join(labels))
 
-        # Extract detected labels
-        labels = results[0].names
-        detected_objects = [labels[int(box.cls)] for box in results[0].boxes]
-        st.write("✅ Objects Detected:", detected_objects)
-
-        # ---------------------------
-        # Gemini AI Scene Analysis
-        # ---------------------------
-        st.subheader("🧠 Gemini Scene Understanding")
-        prompt = f"""
-        You are an AI assistant. Analyze this image scene.
-        Objects detected: {detected_objects}.
-        Give a short description of the scene and possible context.
-        """
-
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
-
-        st.write("### 📖 Scene Description:")
-        st.write(response.text if response else "No description generated.")
-    else:
-        st.warning("⚠️ No objects detected in the image.")
+    # Gemini analysis
+    if api_key:
+        prompt = f"Describe the scene in detail. The objects detected are: {', '.join(labels)}"
+        response = genai.GenerativeModel("gemini-pro").generate_content(prompt)
+        st.subheader("🤖 Gemini AI Insights")
+        st.write(response.text)
