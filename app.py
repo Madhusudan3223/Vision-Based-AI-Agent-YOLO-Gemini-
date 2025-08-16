@@ -1,52 +1,41 @@
-import os
 import streamlit as st
 from ultralytics import YOLO
-from PIL import Image
 import google.generativeai as genai
+from PIL import Image
 
-# 🔑 Load Gemini API key from secret file
-with open("GEMINI_API", "r") as f:
-    api_key = f.read().strip()
+# ✅ Read Gemini API key from Streamlit secrets
+api_key = st.secrets["GEMINI_API"]
 
+# Configure Gemini
 genai.configure(api_key=api_key)
 
-# ✅ Use correct model name (not gemini-pro)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-
-# 🎯 Load YOLO model
-yolo_model = YOLO("yolov8n.pt")
+# Load YOLO model
+model = YOLO("yolov8n.pt")
 
 st.title("🚀 YOLO + Gemini AI App")
 st.write("Upload an image, detect objects with YOLO, and get insights from Gemini AI.")
 
-# 📂 Upload image
 uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Show uploaded image
-    image = Image.open(uploaded_file)
-    st.image(image, caption="📸 Uploaded Image", use_container_width=True)
+    img = Image.open(uploaded_file)
+    st.image(img, caption="📸 Uploaded Image", use_container_width=True)
 
     # Run YOLO detection
-    results = yolo_model(image)
-    detected_objects = []
-
-    for r in results:
-        for box in r.boxes:
-            cls_id = int(box.cls[0])
-            label = yolo_model.names[cls_id]
-            detected_objects.append(label)
-
+    results = model(img)
     st.subheader("🔍 YOLO Detection Results")
-    results[0].show()  # show detection in logs (optional)
-    st.write("✅ Detected Objects:", detected_objects)
+    results.show()
+    st.write("✅ Detected Objects")
+    detected_objects = results[0].names
+    detected_labels = [results[0].names[int(cls)] for cls in results[0].boxes.cls]
+    st.write("Objects Detected:", ", ".join(detected_labels))
 
-    # 🤖 Ask Gemini for insights
-    if detected_objects:
-        prompt = f"The image contains: {', '.join(detected_objects)}. Provide a short, interesting description."
-        try:
-            response = gemini_model.generate_content(prompt)
-            st.subheader("🤖 Gemini AI Insights")
-            st.write(response.text)
-        except Exception as e:
-            st.error(f"Gemini API Error: {e}")
+    # Ask Gemini for insights
+    try:
+        model_gemini = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = f"The following objects were detected: {', '.join(detected_labels)}. Provide a short description of the scene."
+        response = model_gemini.generate_content(prompt)
+        st.subheader("🤖 Gemini AI Insights")
+        st.write(response.text)
+    except Exception as e:
+        st.error(f"Gemini API Error: {e}")
