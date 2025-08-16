@@ -1,8 +1,7 @@
 import streamlit as st
 import cv2
 from ultralytics import YOLO
-import tempfile
-import os
+import numpy as np
 import google.generativeai as genai
 import json
 from PIL import Image
@@ -22,18 +21,14 @@ model = YOLO(model_choice)
 uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Save file temporarily
-    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        img_path = tmp_file.name
+    # Load directly into PIL
+    img = Image.open(uploaded_file).convert("RGB")
+    img_array = np.array(img)
 
-    # Load image
-    img = Image.open(img_path)
-    
-    # YOLO Inference
-    results = model(img_path)
+    # YOLO Inference (directly from numpy array)
+    results = model(img_array)
     annotated_img = results[0].plot()
-    
+
     # Gemini Vision API for description
     model_gemini = genai.GenerativeModel("gemini-1.5-flash")
     response = model_gemini.generate_content(["Describe this image in detail", img])
