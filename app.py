@@ -1,69 +1,60 @@
 import streamlit as st
+import cv2
 from ultralytics import YOLO
-import tempfile
-from PIL import Image
+import numpy as np
 import google.generativeai as genai
-import os
+import json
+from PIL import Image
 
-# -------------------------------
-# Load Gemini API Key from Streamlit secrets
-# -------------------------------
-try:
-    api_key = st.secrets["GEMINI_API"]
-    genai.configure(api_key=api_key)
-except Exception:
-    st.error("⚠️ Failed to load Gemini API Key. Please check your Streamlit secrets.")
-    st.stop()
+# Configure Gemini API
+genai.configure(api_key=st.secrets["GEMINI_API"])
 
-# -------------------------------
-# App UI
-# -------------------------------
-st.title("🚀 YOLO + Gemini AI Scene Analyzer")
-st.write("Upload an image, detect objects with YOLO, and get insights from Gemini AI.")
+# Streamlit UI
+st.set_page_config(page_title="🔍 Vision-Based AI Agent (YOLO + Gemini)", layout="wide")
+st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
 
-# Upload image
+# Model selection
+model_choice = st.selectbox("Choose YOLO model:", ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"])
+model = YOLO(model_choice)
+
+# File uploader
 uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
-    # Save file temporarily
-    temp_dir = tempfile.mkdtemp()
-    img_path = os.path.join(temp_dir, uploaded_file.name)
-    with open(img_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+if uploaded_file:
+    # Load directly into PIL
+    img = Image.open(uploaded_file).convert("RGB")
+    img_array = np.array(img)
 
-    # Display uploaded image
-    st.subheader("📸 Uploaded Image")
-    st.image(Image.open(uploaded_file), caption="Uploaded Image", use_container_width=True)
+    # YOLO Inference (directly from numpy array)
+    results = model(img_array)
+    annotated_img = results[0].plot()
 
-    # -------------------------------
-    # Run YOLO object detection
-    # -------------------------------
-    st.subheader("🔍 YOLO Detection Results")
-    model = YOLO("yolov8n.pt")  # lightweight model
-    results = model.predict(img_path)
+    # Gemini Vision API for description
+    model_gemini = genai.GenerativeModel("gemini-1.5-flash")
+    response = model_gemini.generate_content(["Describe this image in detail", img])
+    description = response.text.strip()
 
-    detected_objects = []
-    for r in results:
-        for box in r.boxes:
-            cls_id = int(box.cls[0])
-            detected_objects.append(model.names[cls_id])
+    # Layout: Side by Side
+    col1, col2 = st.columns(2)
 
-    st.write("✅ Detected Objects")
-    st.write(", ".join(detected_objects) if detected_objects else "No objects detected")
+    with col1:
+        st.subheader("YOLO Detection")
+        st.image(annotated_img, caption="YOLO Object Detection", use_container_width=True)
 
-    # -------------------------------
-    # Ask Gemini AI for insights
-    # -------------------------------
-    st.subheader("🤖 Gemini AI Insights")
+    with col2:
+        st.subheader("✨ Gemini Description")
+        st.write(description)
 
-    prompt = f"""
-    I detected these objects in the image: {', '.join(detected_objects)}.
-    Please describe what this scene might represent in a natural way.
-    """
+        # Prepare JSON for download
+        description_json = {
+            "file_name": uploaded_file.name,
+            "model": model_choice,
+            "description": description
+        }
 
-    try:
-        model_gemini = genai.GenerativeModel("gemini-1.5-flash")
-        response = model_gemini.generate_content(prompt)
-        st.write(response.text)
-    except Exception as e:
-        st.error(f"Gemini API Error: {str(e)}")
+        st.download_button(
+            label="📥 Download Description (JSON)",
+            data=json.dumps(description_json, indent=4),
+            file_name="image_description.json",
+            mime="application/json"
+        )
