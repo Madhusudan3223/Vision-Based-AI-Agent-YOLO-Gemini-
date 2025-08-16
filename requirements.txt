@@ -1,6 +1,5 @@
-torch
-ultralytics
-pillow
 streamlit
+ultralytics
 google-generativeai
-opencv-python-headless
+python-dotenv
+Pillow
