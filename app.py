@@ -1,23 +1,29 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Configure API key
-API_KEY = "YOUR_API_KEY_HERE"  # Replace with your API key
+# Gemini API key (add your key in Streamlit secrets)
+API_KEY = st.secrets["GEMINI_API"]
+
+# Configure Gemini API
 genai.configure(api_key=API_KEY)
 
-st.title("AI Object Describer")
-st.write("Enter an object to describe:")
+def get_gemini_description(object_name):
+    """Generate a one-sentence description using Gemini API."""
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(f"Describe in one sentence what a {object_name} is.")
+    return response.text.strip()
 
-# Input from user
-object_name = st.text_input("Object Name")
+# Streamlit UI
+st.title("Gemini API: Object Description Generator")
+st.write("Enter an object name, and get a creative one-line description!")
 
-if st.button("Describe"):
+object_name = st.text_input("Enter object name:", value="car")
+
+if st.button("Generate Description"):
     if object_name:
-        response = genai.generate_text(
-            model="text-bison-001",
-            prompt=f"Describe the object '{object_name}' in detail.",
-            max_output_tokens=200
-        )
-        st.success(response.result)
+        with st.spinner("Generating description..."):
+            description = get_gemini_description(object_name)
+        st.success("Description Generated!")
+        st.write(f"**{object_name.capitalize()}:** {description}")
     else:
-        st.error("Please enter an object name!")
+        st.warning("Please enter an object name.")
