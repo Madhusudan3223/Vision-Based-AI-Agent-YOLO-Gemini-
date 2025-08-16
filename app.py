@@ -1,47 +1,60 @@
-import os
 import streamlit as st
-from PIL import Image
+import cv2
 from ultralytics import YOLO
+import numpy as np
 import google.generativeai as genai
-from dotenv import load_dotenv
+import json
+from PIL import Image
 
-# Load environment variables
-load_dotenv()
-
-# Try getting Gemini API key
-api_key = os.getenv("GEMINI_API_KEY")
-
-if not api_key:
-    st.warning("⚠️ Gemini API key not found! Please set `GEMINI_API_KEY` in .env or Streamlit secrets.")
-else:
-    genai.configure(api_key=api_key)
-
-# Load YOLO model
-model = YOLO("yolov8n.pt")
+# Configure Gemini API
+genai.configure(api_key=st.secrets["GEMINI_API"])
 
 # Streamlit UI
-st.title("🚀 YOLO + Gemini AI Scene Analyzer")
+st.set_page_config(page_title="🔍 Vision-Based AI Agent (YOLO + Gemini)", layout="wide")
+st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
 
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+# Model selection
+model_choice = st.selectbox("Choose YOLO model:", ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"])
+model = YOLO(model_choice)
+
+# File uploader
+uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Show uploaded image
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_container_width=True)
+    # Load directly into PIL
+    img = Image.open(uploaded_file).convert("RGB")
+    img_array = np.array(img)
 
-    # YOLO detection
-    results = model(image)
-    res_plotted = results[0].plot()
-    st.image(res_plotted, caption="YOLO Detection", use_container_width=True)
+    # YOLO Inference (directly from numpy array)
+    results = model(img_array)
+    annotated_img = results[0].plot()
 
-    # Object list
-    objects = results[0].boxes.cls.cpu().numpy()
-    labels = [model.names[int(cls)] for cls in objects]
-    st.write("🔍 Objects Detected:", ", ".join(labels))
+    # Gemini Vision API for description
+    model_gemini = genai.GenerativeModel("gemini-1.5-flash")
+    response = model_gemini.generate_content(["Describe this image in detail", img])
+    description = response.text.strip()
 
-    # Gemini analysis
-    if api_key:
-        prompt = f"Describe the scene in detail. The objects detected are: {', '.join(labels)}"
-        response = genai.GenerativeModel("gemini-pro").generate_content(prompt)
-        st.subheader("🤖 Gemini AI Insights")
-        st.write(response.text)
+    # Layout: Side by Side
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("YOLO Detection")
+        st.image(annotated_img, caption="YOLO Object Detection", use_container_width=True)
+
+    with col2:
+        st.subheader("✨ Gemini Description")
+        st.write(description)
+
+        # Prepare JSON for download
+        description_json = {
+            "file_name": uploaded_file.name,
+            "model": model_choice,
+            "description": description
+        }
+
+        st.download_button(
+            label="📥 Download Description (JSON)",
+            data=json.dumps(description_json, indent=4),
+            file_name="image_description.json",
+            mime="application/json"
+        )
