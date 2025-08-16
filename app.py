@@ -1,55 +1,65 @@
 import streamlit as st
 import cv2
-import numpy as np
-import tempfile
 from ultralytics import YOLO
+import tempfile
+import os
 import google.generativeai as genai
+import json
 from PIL import Image
 
-# Configure Gemini with API key from Streamlit secrets
+# Configure Gemini API
 genai.configure(api_key=st.secrets["GEMINI_API"])
 
-# Load YOLO model
-model = YOLO("yolov8n.pt")  # small, fast model
-
 # Streamlit UI
+st.set_page_config(page_title="🔍 Vision-Based AI Agent (YOLO + Gemini)", layout="wide")
 st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
 
-uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
+# Model selection
+model_choice = st.selectbox("Choose YOLO model:", ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"])
+model = YOLO(model_choice)
+
+# File uploader
+uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Save to a temp file
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_file.read())
+    # Save file temporarily
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        img_path = tmp_file.name
 
-    # Read image
-    image = Image.open(tfile.name)
-    img_array = np.array(image)
+    # Load image
+    img = Image.open(img_path)
+    
+    # YOLO Inference
+    results = model(img_path)
+    annotated_img = results[0].plot()
+    
+    # Gemini Vision API for description
+    model_gemini = genai.GenerativeModel("gemini-1.5-flash")
+    response = model_gemini.generate_content(["Describe this image in detail", img])
+    description = response.text.strip()
 
-    # YOLO detection
-    results = model(img_array)
-    detected_classes = []
-    annotated_img = img_array.copy()
+    # Layout: Side by Side
+    col1, col2 = st.columns(2)
 
-    for r in results:
-        for box in r.boxes:
-            cls = model.names[int(box.cls)]
-            detected_classes.append(cls)
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(annotated_img, cls, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36, 255, 12), 2)
+    with col1:
+        st.subheader("YOLO Detection")
+        st.image(annotated_img, caption="YOLO Object Detection", use_container_width=True)
 
-    # Show YOLO result
-    st.image(annotated_img, caption="YOLO Detection", use_container_width=True)
-
-    # Ask Gemini for description
-    if detected_classes:
-        prompt = f"Describe an image containing the following objects: {', '.join(detected_classes)}"
-        model_gemini = genai.GenerativeModel("gemini-1.5-flash")
-        response = model_gemini.generate_content(prompt)
-
+    with col2:
         st.subheader("✨ Gemini Description")
-        st.write(response.text)
-    else:
-        st.warning("No objects detected.")
+        st.write(description)
+
+        # Prepare JSON for download
+        description_json = {
+            "file_name": uploaded_file.name,
+            "model": model_choice,
+            "description": description
+        }
+
+        st.download_button(
+            label="📥 Download Description (JSON)",
+            data=json.dumps(description_json, indent=4),
+            file_name="image_description.json",
+            mime="application/json"
+        )
