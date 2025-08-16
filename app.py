@@ -1,60 +1,73 @@
 import streamlit as st
+import torch
 import cv2
-from ultralytics import YOLO
 import numpy as np
+import os
+from ultralytics import YOLO
 import google.generativeai as genai
-import json
-from PIL import Image
 
-# Configure Gemini API
-genai.configure(api_key=st.secrets["GEMINI_API"])
-
-# Streamlit UI
-st.set_page_config(page_title="🔍 Vision-Based AI Agent (YOLO + Gemini)", layout="wide")
-st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
-
-# Model selection
-model_choice = st.selectbox("Choose YOLO model:", ["yolov8n.pt", "yolov8s.pt", "yolov8m.pt"])
-model = YOLO(model_choice)
-
-# File uploader
-uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
-
-if uploaded_file:
-    # Load directly into PIL
-    img = Image.open(uploaded_file).convert("RGB")
-    img_array = np.array(img)
-
-    # YOLO Inference (directly from numpy array)
-    results = model(img_array)
-    annotated_img = results[0].plot()
-
-    # Gemini Vision API for description
+# =============================
+# Load Gemini API Key
+# =============================
+try:
+    with open("GEMINI_API", "r") as f:
+        api_key = f.read().strip()
+    genai.configure(api_key=api_key)
     model_gemini = genai.GenerativeModel("gemini-1.5-flash")
-    response = model_gemini.generate_content(["Describe this image in detail", img])
-    description = response.text.strip()
+except Exception as e:
+    st.error(f"⚠️ Failed to load Gemini API Key: {e}")
+    model_gemini = None
 
-    # Layout: Side by Side
-    col1, col2 = st.columns(2)
+# =============================
+# Load YOLO model
+# =============================
+yolo_model = YOLO("yolov8n.pt")  # lightweight YOLOv8 model
 
-    with col1:
-        st.subheader("YOLO Detection")
-        st.image(annotated_img, caption="YOLO Object Detection", use_container_width=True)
+# =============================
+# Streamlit App
+# =============================
+st.title("🚀 YOLO + Gemini AI Scene Analyzer")
 
-    with col2:
-        st.subheader("✨ Gemini Description")
-        st.write(description)
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-        # Prepare JSON for download
-        description_json = {
-            "file_name": uploaded_file.name,
-            "model": model_choice,
-            "description": description
-        }
+if uploaded_file is not None:
+    # Read image
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1)
 
-        st.download_button(
-            label="📥 Download Description (JSON)",
-            data=json.dumps(description_json, indent=4),
-            file_name="image_description.json",
-            mime="application/json"
-        )
+    # Run YOLO detection
+    results = yolo_model(img)
+    detected_objects = []
+
+    for result in results:
+        boxes = result.boxes
+        for box in boxes:
+            cls_id = int(box.cls[0].item())
+            label = yolo_model.names[cls_id]
+            detected_objects.append(label)
+
+            # Draw bounding boxes
+            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(img, label, (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+    # Show YOLO annotated image
+    st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="YOLO Detection", use_column_width=True)
+
+    # =============================
+    # Gemini Insights (Text Only)
+    # =============================
+    if model_gemini:
+        detected_text = ", ".join(detected_objects) if detected_objects else "nothing detected"
+        prompt = f"""
+        I used YOLO to detect these objects: {detected_text}.
+        Based on this, please describe the scene in detail and what might be happening.
+        """
+
+        try:
+            response = model_gemini.generate_content(prompt)
+            st.subheader("🧠 Gemini AI Scene Analysis")
+            st.write(response.text)
+        except Exception as e:
+            st.error(f"⚠️ Gemini API call failed: {e}")
