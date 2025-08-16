@@ -1,54 +1,52 @@
 import os
-import streamlit as st
-from PIL import Image
-import cv2
 import torch
+import streamlit as st
 from ultralytics import YOLO
+from PIL import Image
 import google.generativeai as genai
 
-# ----------------- Setup Gemini -----------------
-genai.configure(api_key=os.getenv("GEMINI_API"))  # Make sure GEMINI_API is set in secrets
+# Configure Gemini API
+genai.configure(api_key=os.getenv("GEMINI_API"))
 
-# Load Gemini model
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-
-# ----------------- Load YOLO model -----------------
+# Load YOLOv8 model
 @st.cache_resource
-def load_yolo():
-    return YOLO("yolov8n.pt")  # lightweight model
+def load_model():
+    return YOLO("yolov8n.pt")
 
-yolo_model = load_yolo()
+model = load_model()
 
-# ----------------- Streamlit App -----------------
-st.title("🔍 Vision-Based AI Agent (YOLO + Gemini)")
+# Streamlit UI
+st.title("🚀 YOLO + Gemini AI App")
+st.write("Upload an image, detect objects with YOLO, and get insights from Gemini AI.")
 
 # File uploader
-uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("📂 Upload an Image", type=["jpg", "jpeg", "png"])
 
-if uploaded_file:
+if uploaded_file is not None:
     # Open image
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="📸 Uploaded Image", use_column_width=True)
+    img = Image.open(uploaded_file)
 
-    # Run YOLO
-    st.subheader("YOLO Detection")
-    results = yolo_model(image)
+    # Show uploaded image
+    st.image(img, caption="📸 Uploaded Image", use_container_width=True)
 
-    # Annotate image
-    annotated_frame = results[0].plot()
-    st.image(annotated_frame, caption="📦 YOLO Detection Result", use_column_width=True)
+    # Run YOLO detection
+    st.subheader("🔍 YOLO Detection Results")
+    results = model(img)
+    results_img = results[0].plot()  # Annotated image
+    st.image(results_img, caption="✅ Detected Objects", use_container_width=True)
 
-    # Extract detected objects
-    detected_objects = []
-    for box in results[0].boxes:
-        cls_id = int(box.cls[0].item())
-        detected_objects.append(yolo_model.names[cls_id])
+    # Extract detected labels
+    labels = results[0].names
+    detected_objects = [labels[int(cls)] for cls in results[0].boxes.cls]
 
-    # Show detected classes
-    st.write("Detected Objects:", detected_objects if detected_objects else "None")
+    st.write("**Objects Detected:**", ", ".join(detected_objects) if detected_objects else "None")
 
-    # Gemini description
-    st.subheader("✨ Gemini Description")
-    prompt = f"Describe this image. The objects detected are: {detected_objects}."
-    response = gemini_model.generate_content([prompt, image])
-    st.write(response.text)
+    # Ask Gemini for insights
+    if detected_objects:
+        st.subheader("🤖 Gemini AI Insights")
+        prompt = f"I detected these objects: {', '.join(detected_objects)}. Describe them in detail."
+        try:
+            response = genai.GenerativeModel("gemini-pro").generate_content(prompt)
+            st.write(response.text)
+        except Exception as e:
+            st.error(f"Gemini API Error: {e}")
