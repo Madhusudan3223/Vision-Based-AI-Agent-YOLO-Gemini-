@@ -1,29 +1,38 @@
 import streamlit as st
+import torch
+import os
+from PIL import Image
 import google.generativeai as genai
 
-# Gemini API key (add your key in Streamlit secrets)
-API_KEY = st.secrets["GEMINI_API"]
+# Load YOLO model (make sure you exported YOLOv8 from Colab to same folder)
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # small model for speed
 
 # Configure Gemini API
-genai.configure(api_key=API_KEY)
+genai.configure(api_key=os.getenv("GEMINI_API"))
 
-def get_gemini_description(object_name):
-    """Generate a one-sentence description using Gemini API."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(f"Describe in one sentence what a {object_name} is.")
-    return response.text.strip()
+st.title("🔎 Vision-Based AI Agent")
+st.write("Upload an image → Detect objects with YOLO → Generate description with Gemini")
 
-# Streamlit UI
-st.title("Gemini API: Object Description Generator")
-st.write("Enter an object name, and get a creative one-line description!")
+# Upload button
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "webp"])
 
-object_name = st.text_input("Enter object name:", value="car")
+if uploaded_file is not None:
+    # Open image
+    image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="Uploaded Image", use_column_width=True)
 
-if st.button("Generate Description"):
-    if object_name:
-        with st.spinner("Generating description..."):
-            description = get_gemini_description(object_name)
-        st.success("Description Generated!")
-        st.write(f"**{object_name.capitalize()}:** {description}")
+    # Run YOLO detection
+    results = model(image)
+    detected_objects = results.pandas().xyxy[0]["name"].tolist()
+    st.write("### 🟢 Detected Objects:", detected_objects)
+
+    if detected_objects:
+        # Generate description using Gemini
+        model_gemini = genai.GenerativeModel("gemini-pro")
+        prompt = f"The image contains the following objects: {', '.join(detected_objects)}. Write a detailed description."
+        response = model_gemini.generate_content(prompt)
+
+        st.write("### 📝 Gemini Description:")
+        st.write(response.text)
     else:
-        st.warning("Please enter an object name.")
+        st.warning("No objects detected.")
