@@ -53,7 +53,9 @@ Provides an interactive, user-friendly interface for AI object recognition and d
 
 🎨 Visual Preview
 
-Include screenshots showing:
+![Screenshot](https://raw.githubusercontent.com/Madhusudan3223/Vision-Based-AI-Agent-YOLO-Gemini-/857a87197e7353230f13e9315fd2a1eb2c4e6049/Screenshot%20(177).PNG)
+
+
 
 YOLO detection on images
 
