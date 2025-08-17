@@ -19,6 +19,16 @@ Gemini descriptions appearing in Streamlit
 
 ---
 
+🌐 Streamlit Deployment
+
+The project is deployed as a Streamlit app.
+link - https://ai-object-describer-2xq3krnck9vfpw4keecwly.streamlit.app/
+
+Users can upload images or videos, run detection, and instantly view Gemini-generated descriptions.
+
+Provides an interactive, user-friendly interface for AI object recognition and descriptive insights.
+
+---
 
 🔍 Features
 
@@ -51,16 +61,6 @@ Safe handling of API keys and credentials.
 
 Ideal for dashboards, AI applications, or creative content generation.
 
-
----
-
-🌐 Streamlit Deployment
-
-The project is deployed as a Streamlit app.
-
-Users can upload images or videos, run detection, and instantly view Gemini-generated descriptions.
-
-Provides an interactive, user-friendly interface for AI object recognition and descriptive insights.
 
 ---
 
