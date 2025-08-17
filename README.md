@@ -6,6 +6,20 @@ Generates multiple, unique, and diverse descriptions for enhanced reporting and 
 
 ---
 
+🎨 Visual Preview
+
+![Screenshot](https://raw.githubusercontent.com/Madhusudan3223/Vision-Based-AI-Agent-YOLO-Gemini-/857a87197e7353230f13e9315fd2a1eb2c4e6049/Screenshot%20(177).PNG)
+
+
+
+YOLO detection on images
+
+Gemini descriptions appearing in Streamlit
+
+
+---
+
+
 🔍 Features
 
 Image & Video Upload: Easily upload and process media in Google Colab or Streamlit.
@@ -50,15 +64,3 @@ Provides an interactive, user-friendly interface for AI object recognition and d
 
 ---
 
-
-🎨 Visual Preview
-
-![Screenshot](https://raw.githubusercontent.com/Madhusudan3223/Vision-Based-AI-Agent-YOLO-Gemini-/857a87197e7353230f13e9315fd2a1eb2c4e6049/Screenshot%20(177).PNG)
-
-
-
-YOLO detection on images
-
-Gemini descriptions appearing in Streamlit
-
-Processed videos with labeled bounding boxes
